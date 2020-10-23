@@ -22,6 +22,8 @@ class CreateSettingsTable extends Migration
             $table->text('FAQS');
             $table->text('CU');
             $table->text('CP');
+            $table->text('MID1');
+            $table->text('MID2');
             $table->timestamps();
         });
     }

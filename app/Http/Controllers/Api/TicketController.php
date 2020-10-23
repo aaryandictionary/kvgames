@@ -58,7 +58,6 @@ class TicketController extends Controller
 
         $removeTicketDay1 = DB::table('ticket_category_changes')
             ->where('change_for_date', '=', $date)
-            ->where('status', '=', 1)
             // ->where('change_for_time','>',$time)
             ->pluck('change_for_time');
 

@@ -20,6 +20,8 @@ class CreateUsersTable extends Migration
             $table->string('email');
             $table->string('referral_code');
             $table->double('balance')->default(0);
+            $table->integer('status')->default(1);
+            $table->string('token');
             $table->timestamp('email_verified_at')->nullable();
             $table->string('image_url')->nullable();
             $table->string('password');

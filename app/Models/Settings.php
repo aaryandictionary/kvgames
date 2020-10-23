@@ -16,6 +16,8 @@ class Settings extends Model
         'FAQS',
         'CU',
         'CP',
+        'MID1',
+        'MID2',
         'created_at',
         'updated_at',
     ];

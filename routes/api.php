@@ -73,6 +73,10 @@ Route::get('gettransactions/{status}','Api\TicketController@getTransactions');
 Route::get('gettotals','Api\TicketController@getTotals');
 // Route::get('getLastJoinId','Api\UserController@getLastJoinId');
 
+Route::get('getPendingTxns/{userId}','Api\UserController@getPendingTxns');
 
-// Route::get('findNextGame','Api\UserController@findNextGame');
+
+Route::get('findNextGame','Api\UserController@findNextGame');
+Route::get('getTicketUser/{type}','Api\UserController@getTicketUser');
+Route::get('getTicketsNew/{userId}','Api\UserController@getTicketsNew');
 

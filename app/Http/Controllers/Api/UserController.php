@@ -13,11 +13,12 @@ use App\Models\TicketCategory;
 use App\Models\Transactions;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
-use DB;
+use Illuminate\Support\Facades\DB;
+
 use Illuminate\Support\Facades\Auth; 
 use Illuminate\Support\Facades\Validator;
 use App\User;
-
+use Exception;
 
 class UserController extends Controller
 {
@@ -32,7 +33,8 @@ class UserController extends Controller
         $userCheck=User::where('phone','=',$request->phone)->first();
 
         if($userCheck){
-            $userCheck['token']=$userCheck->createToken('MyApp')-> accessToken; 
+            $userCheck['token']=$userCheck->createToken('MyApp')->accessToken; 
+
             $response=ApiHelper::createAPIResponse(false,201,"User already exist",$userCheck);
             return response()->json($response, 201);  
         }
@@ -93,8 +95,14 @@ class UserController extends Controller
         if(Auth::attempt(['phone' => request('phone'), 'password' => request('password')])){ 
             $user = Auth::user(); 
 
+
+            if($user->status==0){
+                $response=ApiHelper::createAPIResponse(false,201,"User blocked",null);
+            return response()->json($response, 201);  
+            }
+
             $success=$user;
-            $success['token'] =  $user->createToken('MyApp')-> accessToken; 
+            $success['token'] =  $user->createToken('MyApp')->accessToken; 
             $response=ApiHelper::createAPIResponse(false,200,"Login successful",$success);
             return response()->json($response, 200); 
         } 
@@ -158,98 +166,151 @@ class UserController extends Controller
 
 
     public function getickets($userId){
-
         $today=new Carbon();
-
-        $dates=[];
-        $dates[0]=$today->toDateString();
-        $dates[1]=$today->addDay(1)->toDateString();
-
+        $date=$today->toDateString();
         $time=$today->addMinutes(15)->toTimeString();
 
-        $removeTicketDay1=DB::table('ticket_category_changes') 
-                                    ->where('change_for_date','=',$dates[0])
+        $resultTicket=[];
+
+        $i=0;
+
+        do{
+
+        $remove=DB::table('ticket_category_changes') 
+                                    ->where('change_for_date','=',$date)
+                                    ->where('change_for_time','>',$time)
+                                    ->pluck('change_for_time');
+
+        $add=DB::table('ticket_category_changes')
+                                    ->where('change_for_date','=',$date)
                                     ->where('status','=',1)
                                     ->where('change_for_time','>',$time)
-                                    ->select('change_for_time')
-                                    ->get()->toArray();
+                                    ->select('change_for_time','tup_1','tup_2','tup_3','tup_4','double_game');
+                                    
+        $ticket=DB::table('ticket_category')    
+                                    ->where('is_enabled',1)
+                                    ->whereNotIn('ticket_time',$remove)
+                                    ->select('ticket_time','tup_1','tup_2','tup_3','tup_4','double_game')
+                                    ->where('ticket_time','>',$time)
+                                    ->union($add)
+                                    ->orderBy('ticket_time','ASC')
+                                    ->get();
 
-            $newRTD1=[];
-            $i=0;
-            foreach($removeTicketDay1 as $rtd1){
-                $newRTD1[$i]=$rtd1->change_for_time;
-                $i++;
-            }
+        $myticket=DB::table('my_tickets')
+                        ->where('my_ticket_date','=',$date)
+                        ->where('user_id','=',$userId)
+                        ->select(DB::raw("my_ticket_time,ticket_unit_price,COUNT(my_ticket_id) AS ticket_count,my_ticket_date"))
+                        ->groupBy('my_ticket_time','ticket_unit_price','my_ticket_date')
+                        ->get();
 
-        $addTicketDay1=DB::table('ticket_category_changes')
-                                ->where('change_for_date','=',$dates[0])
-                                ->where('status','=',1)
-                                ->where('change_for_time','>',$time)
-                                ->select('change_for_time','tup_1','tup_2','tup_3','tup_4','double_game');
-
-        $ticketDay1=DB::table('ticket_category')    
-                            ->where('is_enabled',1)
-                            ->whereNotIn('ticket_time',$newRTD1)
-                            ->select('ticket_time','tup_1','tup_2','tup_3','tup_4','double_game')
-                            ->where('ticket_time','>',$time)
-                            ->union($addTicketDay1)
-                            ->orderBy('ticket_time','ASC')
-                            ->get();
-
-
-        $removeTicketDay2=DB::table('ticket_category_changes') 
-                            ->where('change_for_date','=',$dates[1])
-                            ->where('status','=',1)
-                            ->select('change_for_time')
-                            ->get();
-
-        $newRTD2=[];
-        $i=0;
-        foreach($removeTicketDay2 as $rtd2){
-            $newRTD2[$i]=$rtd2->change_for_time;
+        if(!$ticket->isEmpty()){
+            $resultTicket[$i]['date']=$date;
+            $resultTicket[$i]['ticket']=$ticket;
+            $resultTicket[$i]['myTickets']=$myticket;
             $i++;
         }
 
-        $addTicketDay2=DB::table('ticket_category_changes')
-                        ->where('change_for_date','=',$dates[1])
-                        ->where('status','=',1)
-                        ->select('change_for_time','tup_1','tup_2','tup_3','tup_4','double_game');
-
-        $ticketDay2=DB::table('ticket_category')    
-                    ->where('is_enabled',1)
-                    ->whereNotIn('ticket_time',(array)$newRTD2)
-                    ->select('ticket_time','tup_1','tup_2','tup_3','tup_4','double_game')
-                    ->union($addTicketDay2)
-                    ->orderBy('ticket_time','ASC')
-                    ->get();
-
-        $myticketDay1=DB::table('my_tickets')
-                        ->where('my_ticket_date','=',$dates[0])
-                        ->where('user_id','=',$userId)
-                        ->select(DB::raw("my_ticket_time,ticket_unit_price,COUNT(my_ticket_id) AS ticket_count,my_ticket_date"))
-                        ->groupBy('my_ticket_time','ticket_unit_price','my_ticket_date')
-                        ->get();
-
-        $myticketDay2=DB::table('my_tickets')
-                        ->where('my_ticket_date','=',$dates[1])
-                        ->where('user_id','=',$userId)
-                        ->select(DB::raw("my_ticket_time,ticket_unit_price,COUNT(my_ticket_id) AS ticket_count,my_ticket_date"))
-                        ->groupBy('my_ticket_time','ticket_unit_price','my_ticket_date')
-                        ->get();
-
-        $resultTicket=[];
-        $resultTicket[0]['date']=$dates[0];
-        $resultTicket[0]['ticket']=$ticketDay1;
-        $resultTicket[0]['myTickets']=$myticketDay1;
-        $resultTicket[1]['date']=$dates[1];
-        $resultTicket[1]['ticket']=$ticketDay2;
-        $resultTicket[1]['myTickets']=$myticketDay2;
-
-        // $ticketResult=[$dates[0]=>$ticketDay1,$dates[1]=>$ticketDay2];
+        $date=$today->addDay(1)->toDateString();
+        $time="00:00:00";
+                
+        }while($i<2);
 
         $response=ApiHelper::createAPIResponse(false,200,"",$resultTicket);
         return response()->json($response,200);
     }
+
+
+    // public function getickets($userId){
+
+    //     $today=new Carbon();
+
+    //     $dates=[];
+    //     $dates[0]=$today->toDateString();
+    //     $dates[1]=$today->addDay(1)->toDateString();
+
+    //     $time=$today->addMinutes(15)->toTimeString();
+
+    //     $removeTicketDay1=DB::table('ticket_category_changes') 
+    //                                 ->where('change_for_date','=',$dates[0])
+    //                                 ->where('change_for_time','>',$time)
+    //                                 ->select('change_for_time')
+    //                                 ->get()->toArray();
+
+    //         $newRTD1=[];
+    //         $i=0;
+    //         foreach($removeTicketDay1 as $rtd1){
+    //             $newRTD1[$i]=$rtd1->change_for_time;
+    //             $i++;
+    //         }
+
+    //     $addTicketDay1=DB::table('ticket_category_changes')
+    //                             ->where('change_for_date','=',$dates[0])
+    //                             ->where('status','=',1)
+    //                             ->where('change_for_time','>',$time)
+    //                             ->select('change_for_time','tup_1','tup_2','tup_3','tup_4','double_game');
+
+    //     $ticketDay1=DB::table('ticket_category')    
+    //                         ->where('is_enabled',1)
+    //                         ->whereNotIn('ticket_time',$newRTD1)
+    //                         ->select('ticket_time','tup_1','tup_2','tup_3','tup_4','double_game')
+    //                         ->where('ticket_time','>',$time)
+    //                         ->union($addTicketDay1)
+    //                         ->orderBy('ticket_time','ASC')
+    //                         ->get();
+
+
+    //     $removeTicketDay2=DB::table('ticket_category_changes') 
+    //                         ->where('change_for_date','=',$dates[1])
+    //                         ->select('change_for_time')
+    //                         ->get();
+
+    //     $newRTD2=[];
+    //     $i=0;
+    //     foreach($removeTicketDay2 as $rtd2){
+    //         $newRTD2[$i]=$rtd2->change_for_time;
+    //         $i++;
+    //     }
+
+    //     $addTicketDay2=DB::table('ticket_category_changes')
+    //                     ->where('change_for_date','=',$dates[1])
+    //                     ->where('status','=',1)
+    //                     ->select('change_for_time','tup_1','tup_2','tup_3','tup_4','double_game');
+
+    //     $ticketDay2=DB::table('ticket_category')    
+    //                 ->where('is_enabled',1)
+    //                 ->whereNotIn('ticket_time',(array)$newRTD2)
+    //                 ->select('ticket_time','tup_1','tup_2','tup_3','tup_4','double_game')
+    //                 ->union($addTicketDay2)
+    //                 ->orderBy('ticket_time','ASC')
+    //                 ->get();
+
+    //     $myticketDay1=DB::table('my_tickets')
+    //                     ->where('my_ticket_date','=',$dates[0])
+    //                     ->where('user_id','=',$userId)
+    //                     ->select(DB::raw("my_ticket_time,ticket_unit_price,COUNT(my_ticket_id) AS ticket_count,my_ticket_date"))
+    //                     ->groupBy('my_ticket_time','ticket_unit_price','my_ticket_date')
+    //                     ->get();
+
+    //     $myticketDay2=DB::table('my_tickets')
+    //                     ->where('my_ticket_date','=',$dates[1])
+    //                     ->where('user_id','=',$userId)
+    //                     ->select(DB::raw("my_ticket_time,ticket_unit_price,COUNT(my_ticket_id) AS ticket_count,my_ticket_date"))
+    //                     ->groupBy('my_ticket_time','ticket_unit_price','my_ticket_date')
+    //                     ->get();
+
+    //     $resultTicket=[];
+    //     $resultTicket[0]['date']=$dates[0];
+    //     $resultTicket[0]['ticket']=$ticketDay1;
+    //     $resultTicket[0]['myTickets']=$myticketDay1;
+    //     $resultTicket[1]['date']=$dates[1];
+    //     $resultTicket[1]['ticket']=$ticketDay2;
+    //     $resultTicket[1]['myTickets']=$myticketDay2;
+
+    //     // $ticketResult=[$dates[0]=>$ticketDay1,$dates[1]=>$ticketDay2];
+
+    //     $response=ApiHelper::createAPIResponse(false,200,"",$resultTicket);
+    //     return response()->json($response,200);
+    // }
 
 
     public function myTickets($userId){
@@ -261,14 +322,20 @@ class UserController extends Controller
 
         $time=$today->toTimeString();
 
-        $myTickets=DB::table('my_tickets')
-                    ->whereIn('my_ticket_date',$dates)
+        $myTickets1=DB::table('my_tickets')
+                    ->where('my_ticket_date',$dates[0])
                     ->where('user_id','=',$userId)
                     ->where('my_ticket_time','>',$time)
+                    ->select('*');
+
+        $myTickets=DB::table('my_tickets')
+                    ->where('my_ticket_date',$dates[1])
+                    ->where('user_id','=',$userId)
+                    ->select('*')
+                    ->union($myTickets1)
                     ->orderBy('my_ticket_date','ASC')
                     ->orderBy('my_ticket_time','ASC')
                     ->orderBy('ticket_unit_price','ASC')
-                    ->select('*')
                     ->get();
 
         $response=ApiHelper::createAPIResponse(false,200,"",$myTickets);
@@ -333,6 +400,11 @@ class UserController extends Controller
             }
         }
 
+        DB::beginTransaction();
+
+        try{
+
+
         foreach($tickets as $tic){
         $ticketAdded=MyTickets::create($tic);
         }
@@ -350,11 +422,23 @@ class UserController extends Controller
 
         $walletBalance=$walletBalance+$amount;
 
-
-            $user->update(['balance'=>$walletBalance]);
-
-            $response=ApiHelper::createAPIResponse(false,200,"",null);
+        if($walletBalance<0){
+            $response=ApiHelper::createAPIResponse(true,101,"Insufficient balance",null);
             return response()->json($response,200);
+        }
+
+        $user->update(['balance'=>$walletBalance]);
+
+        DB::commit();
+
+        $response=ApiHelper::createAPIResponse(false,200,"",null);
+        return response()->json($response,200);
+
+    }catch(Exception $e){
+        DB::rollBack();
+        $response=ApiHelper::createAPIResponse(false,301,"",null);
+        return response()->json($response,200);
+    }
         
     }
 
@@ -419,14 +503,17 @@ class UserController extends Controller
             return response()->json($response,200);  
         }
 
-        $transactionAdded=Transactions::create($request->all());
+        $txn=Transactions::where('order_id','=',$request->order_id)->first();
+
+        if(!$txn){
+            $transactionAdded=Transactions::create($request->all());
 
 
-        if($request->txn_status=="SUCCESS"){
-        $walletBalance=$walletBalance-$amount;
-        $count=$user->update(['balance'=>$walletBalance]);
+            if($request->txn_status=="SUCCESS"||$request->txn_status=="PENDING"){
+            $walletBalance=$walletBalance-$amount;
+            $count=$user->update(['balance'=>$walletBalance]);
+            }
         }
-        
             $response=ApiHelper::createAPIResponse(false,200,"",null);
             return response()->json($response,200);
         
@@ -456,24 +543,23 @@ class UserController extends Controller
                             ->where('order_id','=',$request->order_id)
                             ->first();
 
-        $amount=$txn->amount;
 
-        if($request->txn_status=="SUCCESS"){
-            $walletBalance=$walletBalance-$amount;
-            $count=$user->update(['balance'=>$walletBalance]);
+        if($txn->txn_status=="PENDING"&&$request->txn_status!="PENDING"){
+            $amount=$txn->amount;
+
+            if($request->txn_status=="FAILURE"){
+                $walletBalance=$walletBalance+$amount;
+                $count=$user->update(['balance'=>$walletBalance]);
+            }
+    
+            $txn->update(['bank_txn_id'=>$request->bank_txn_id,'txn_id'=>$request->txn_id,'txn_status'=>$request->txn_status]);    
         }
 
         
-
-        $txn->update(['bank_txn_id'=>$request->bank_txn_id,'txn_id'=>$request->txn_id,'txn_status'=>$request->txn_status]);
-
         $response=ApiHelper::createAPIResponse(false,200,"",null);
         return response()->json($response,200);
 
     }
-
-
-
 
 
     public function getNextGameTime($type){
@@ -492,14 +578,12 @@ class UserController extends Controller
         do{
             $i++;
         $minus=DB::table('ticket_category_changes')
-                        ->select('change_for_time')
-                        ->where('change_for_date','=',$date)
-                        ->where('change_for_time','>',$time)
-                        ->where('status','=',0)
-                        ->get()->toArray();
+            ->where('change_for_date','=',$date)
+            ->where('change_for_time','>',$time)
+            ->pluck('change_for_time');
 
         $add=DB::table('ticket_category_changes')
-                        ->select(DB::raw('change_for_time AS ticket_time'))
+                        ->select(DB::raw('change_for_time AS ticket_time,double_game'))
                         ->where('change_for_time','>',$time)
                         ->where('change_for_date','=',$date)
                         ->where('status','=',1);
@@ -507,9 +591,10 @@ class UserController extends Controller
         $ticket=DB::table('ticket_category')
                         ->whereNotIn('ticket_time',$minus)
                         ->where('is_enabled',1)
-                        ->select('ticket_time')
+                        ->select('ticket_time','double_game')
                         ->where('ticket_time','>',$time)
                         ->union($add)
+                        ->orderBy('ticket_time')
                         ->get();
 
         $date=$today->addDay(1)->toDateString();
@@ -523,6 +608,7 @@ class UserController extends Controller
 
         $nextTicketTime=[];
         $nextTicketTime['next_time']=$ticket[0]->ticket_time;
+        $nextTicketTime['double_game']=$ticket[0]->double_game;
         $nextTicketTime['time']=$timeNow;
         $nextTicketTime['date']=$date;
 
@@ -543,7 +629,7 @@ class UserController extends Controller
 
     public function getAllUsers(){
         $users=DB::table('users')
-                        ->select('id','name','phone','email','balance','image_url')
+                        ->select('id','name','phone','email','balance','image_url','status')
                         ->orderBy('balance','DESC')
                         ->get();
         $response=ApiHelper::createAPIResponse(false,200,"",$users);
@@ -606,12 +692,14 @@ class UserController extends Controller
 
         $today=new Carbon();
 
-        $date=$today->toDateString();
+        // $date=$today->toDateString();
+        $date=$request->game_date;
         $timeNow=$today->toTimeString();
         $time=$today->addMinutes(1)->toTimeString();
 
 
-        $ticketTime=$this->findNextGame();
+        // $ticketTime=$this->findNextGame();
+        $ticketTime=$request->game_time;
 
         $myTickets=DB::table('my_tickets')
                         ->where('user_id','=',$request->user_id)
@@ -643,7 +731,6 @@ class UserController extends Controller
             }
             
             if($joinedGame==null){
-                $request['game_date']=$date;
                 $request['join_time']=$timeNow;
 
                 $joinedGame=GameJoins::create($request->all());
@@ -693,13 +780,16 @@ class UserController extends Controller
         $timeNow=$today->addMinutes(-1)->toTimeString();
         $time=$today->addMinutes(-10)->toTimeString();
 
+        $i=0;
+
+        do{
+            $i++;
        
         $minus=DB::table('ticket_category_changes')
                         ->select('change_for_time')
                         ->where('change_for_date','=',$date)
                         ->where('change_for_time','>',$timeNow)
                         ->where('change_for_time','<',$time)
-                        ->where('status','=',0)
                         ->get()->toArray();
 
         $add=DB::table('ticket_category_changes')
@@ -718,11 +808,22 @@ class UserController extends Controller
                         ->union($add)
                         ->orderBy('ticket_time','ASC')
                         ->get();
+                        
+        $date=$today->addDay(1)->toDateString();
+        $timeNow="00:00:00";
+        $time="23:59:59";
+                
+        }while($ticket->isEmpty()&&$i<=2);
+                            
+        $date=$today->addDay(-1)->toDateString();
         
         if($ticket->isEmpty()){
             return null;
         }
-        return $ticket[0]->ticket_time;
+        $dateTime['date']=$date;
+        $dateTime['time']=$ticket[0]->ticket_time;
+
+        return $dateTime;
     }
 
 
@@ -847,7 +948,7 @@ class UserController extends Controller
     public function getUserBalance($userId){
         $walletBalance=DB::table('users')
                             ->where('id','=',$userId)
-                            ->select(DB::raw('balance AS amount'))
+                            ->select(DB::raw('balance AS amount,status'))
                             ->first();
 
         $response=ApiHelper::createAPIResponse(false,200,"",$walletBalance);
@@ -855,6 +956,38 @@ class UserController extends Controller
     }
 
 
-    
+    public function getPendingTxns($userId){
+        $txn=Transactions::where('user_id','=',$userId)
+                            ->where('txn_type','=','WITHDRAW')
+                            ->where('txn_status','=','PENDING')
+                            ->select('bank_txn_id','txn_id','order_id','user_id','txn_type','txn_status','amount')
+                            ->first();
+    $response=ApiHelper::createAPIResponse(false,200,"",$txn);
+    return response()->json($response,200);
+    }
+
+    public function getTicketUser($type){
+        $dateTime=$this->findNextGame();
+
+        if($type==0){
+            $tokens=DB::table('my_tickets')
+            ->join('users','users.id','my_tickets.user_id')
+            ->where('my_tickets.my_ticket_date',$dateTime['date'])
+            ->where('my_tickets.my_ticket_time',$dateTime['time'])
+            ->distinct()
+            ->pluck('users.token');
+        }else{
+            $tokens=DB::table('users')
+                    ->join('my_tickets','users.id','!=','my_tickets.user_id')
+                    ->where('my_tickets.my_ticket_date','=',$dateTime['date'])
+                    ->where('my_tickets.my_ticket_time','=',$dateTime['time'])
+                    ->distinct()
+                    ->pluck('users.token');
+        }
+        
+        
+        $response=ApiHelper::createAPIResponse(false,200,"",$tokens);
+        return response()->json($response,200);
+    }
 
 }
