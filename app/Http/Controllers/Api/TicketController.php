@@ -10,6 +10,7 @@ use App\Helpers\ApiHelper;
 use App\Models\MyTickets;
 use App\Models\TicketCategory;
 use App\Models\TicketCategoryChange;
+use App\Models\Transactions;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
 
@@ -50,6 +51,50 @@ class TicketController extends Controller
         return response()->json($response, 200);
     }
 
+    //Get Master game timings
+
+    public function getMasterGameTimings(){
+        $times=TicketCategory::orderBy('ticket_time','ASC')
+                                ->pluck('ticket_time');
+        
+        $response = ApiHelper::createAPIResponse(false, 200, "", $times);
+        return response()->json($response, 200);
+    }
+
+    //Get Master Game timing Details
+
+    public function getMasterGameDetails($time){
+        $ticket=TicketCategory::where('ticket_time',$time)
+                                    ->select('ticket_time','tup_1','tup_2','tup_3','tup_4','double_game')
+                                    ->addSelect(DB::raw('is_enabled as status'))
+                                    ->first();
+
+        $response = ApiHelper::createAPIResponse(false, 200, "", $ticket);
+        return response()->json($response, 200);
+    }
+
+    public function updateMasterGameDetails(Request $request){
+        $ticket=TicketCategory::where('ticket_time',$request->change_for_time)
+                                ->first();
+
+        if($ticket){
+            $ticket->tup_1=$request->tup_1;
+            $ticket->tup_2=$request->tup_2;
+            $ticket->tup_3=$request->tup_3;
+            $ticket->tup_4=$request->tup_4;
+            $ticket->is_enabled=$request->status;
+            $ticket->double_game=$request->double_game;
+
+            $ticket->save();
+
+            $response = ApiHelper::createAPIResponse(false, 200, "", $ticket);
+            return response()->json($response, 200);
+        }else{
+            $response = ApiHelper::createAPIResponse(false, 400, "", $ticket);
+            return response()->json($response, 200);
+        }
+    }
+
 
     public function getGameTimings($date)
     {
@@ -68,7 +113,7 @@ class TicketController extends Controller
             ->select('change_for_time');
 
         $ticketDay1 = DB::table('ticket_category')
-            ->where('is_enabled', 1)
+            // ->where('is_enabled', 1)
             ->whereNotIn('ticket_time', $removeTicketDay1)
             // ->where('ticket_time','>',$time)
             ->union($addTicketDay1)
@@ -103,20 +148,20 @@ class TicketController extends Controller
         return response()->json($response, 200);
     }
 
+    //Get Admin Game with date and time
 
     public function getGameAdmin($date, $time)
     {
         $ticket = DB::table('ticket_category_changes')
             ->where('change_for_date', '=', $date)
-            ->where('status', '=', 1)
             ->where('change_for_time', '=', $time)
-            ->select('change_for_time','tup_1','tup_2','tup_3','tup_4','double_game')
+            ->select('change_for_time','tup_1','tup_2','tup_3','tup_4','double_game','status')
             ->first();
 
         if (!$ticket) {
             $ticket = DB::table('ticket_category')
                             ->select('ticket_time','tup_1','tup_2','tup_3','tup_4','double_game')
-                            ->where('is_enabled', 1)
+                            ->addSelect(DB::raw('is_enabled as status'))
                             ->where('ticket_time','=',$time)
                             ->first();
         }
@@ -126,15 +171,14 @@ class TicketController extends Controller
     }
 
 
+    //Update Main Game
+
     public function updateGameAdmin(Request $request){
         $date=$request->change_for_date;
         $time=$request->change_for_time;
 
-        $ticket = DB::table('ticket_category_changes')
-        ->where('change_for_date', '=', $date)
-        ->where('status', '=', 1)
+        $ticket = TicketCategoryChange::where('change_for_date', '=', $date)
         ->where('change_for_time', '=', $time)
-        ->select('change_for_time','tup_1','tup_2','tup_3','tup_4','double_game')
         ->first();
 
         if($ticket){
@@ -153,9 +197,13 @@ class TicketController extends Controller
         return response()->json($response, 200);
     }
 
+
+    //Add Main Game
+
     public function addMainGame(Request $request){
         $ticket = DB::table('ticket_category')
                             ->select('ticket_time','tup_1','tup_2','tup_3','tup_4','double_game')
+                            ->addSelect(DB::raw('is_enabled as status'))
                             ->where('ticket_time','=',$request->ticket_time)
                             ->first();
 
@@ -170,6 +218,9 @@ class TicketController extends Controller
         return response()->json($response, 200);
     }
 
+
+    //Delete main game by time
+
     public function deleteMainGame($time){
         $ticket = DB::table('ticket_category')
                             ->where('ticket_time','=',$time)
@@ -177,6 +228,8 @@ class TicketController extends Controller
         $response = ApiHelper::createAPIResponse(false, 200, "", null);
         return response()->json($response, 200);
     }
+
+    //Delete game change with date and time
 
     public function deleteGameChange($date,$time){
         $ticket = DB::table('ticket_category_changes')
@@ -188,26 +241,72 @@ class TicketController extends Controller
         return response()->json($response, 200);
     }
 
+    //Delete game completly with time
+
+    public function deleteGameMainandChange($time){
+        $ticket = DB::table('ticket_category')
+                            ->where('ticket_time','=',$time)
+                            ->delete();
+    $ticket = DB::table('ticket_category_changes')
+                            ->where('change_for_time', '=', $time)
+                            ->delete();
+    $response = ApiHelper::createAPIResponse(false, 200, "", null);
+    return response()->json($response, 200);
+    }
+
+
+//Get transactions
+
     public function getTransactions($status){
-        if($status=="ALL"){
+        if($status=="All"){
             $txns=DB::table('transactions')
-            ->whereIn('txn_type',['PAYTM','WITHDRAW'])
-            ->select('*')
-            ->orderBy('created_at')
+            ->leftJoin('users','users.id','transactions.user_id')
+            ->whereIn('txn_type',array('PAYTM','WITHDRAW'))
+            ->select('transactions.*','users.phone')
+            ->limit(100)
+            ->orderBy('updated_at','DESC')
             ->get();
-        }else{
+        }else if($status=="Pending"){
             $txns=DB::table('transactions')
-                    ->where('txn_status','=',$status)
-                    ->whereIn('txn_type',['PAYTM','WITHDRAW'])
-                    ->select('*')
-                    ->orderBy('created_at')
+                    ->leftJoin('users','users.id','transactions.user_id')
+                    ->where('txn_status','=','PENDING')
+                    ->whereIn('txn_type',array('PAYTM','WITHDRAW'))
+                    ->select('transactions.*','users.phone')
+                    ->orderBy('updated_at','DESC')
                     ->get();
+        }else if($status=="Failed"){
+            $txns=DB::table('transactions')
+            ->leftJoin('users','users.id','transactions.user_id') 
+            ->where('txn_status','=','FAILURE')
+            ->whereIn('txn_type',array('PAYTM','WITHDRAW'))
+            ->select('transactions.*','users.phone')
+            ->limit(100)
+            ->orderBy('updated_at','DESC')
+            ->get();
+        }else if($status=="Received"){
+            $txns=DB::table('transactions')
+                    ->leftJoin('users','users.id','transactions.user_id')
+                    ->whereIn('txn_type',array('PAYTM'))
+                    ->select('transactions.*','users.phone')
+                    ->limit(100)
+                    ->orderBy('updated_at','DESC')
+                    ->get();
+        }else if($status=="Paid"){
+            $txns=DB::table('transactions')
+            ->leftJoin('users','users.id','transactions.user_id')
+            ->whereIn('txn_type',array('WITHDRAW'))
+            ->select('transactions.*','users.phone')
+            ->orderBy('updated_at','DESC')
+            ->limit(100)
+            ->get();
         }
         
         $response=ApiHelper::createAPIResponse(false,200,"",$txns);
         return response()->json($response,200);
     }
 
+
+    //Get total transactions
 
     public function getTotals(){
         $received=DB::table('transactions')

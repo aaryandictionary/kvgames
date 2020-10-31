@@ -1,9 +1,13 @@
 <?php
 
 namespace App\Console;
+use Carbon\Carbon;
 
+use DateTime;
 use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Foundation\Console\Kernel as ConsoleKernel;
+use Illuminate\Support\Facades\DB;
+
 
 class Kernel extends ConsoleKernel
 {
@@ -24,7 +28,17 @@ class Kernel extends ConsoleKernel
      */
     protected function schedule(Schedule $schedule)
     {
-        $schedule->command('minute:update')->everyMinute();
+        $schedule->command('minute:update')->everyMinute()->when(function (){
+            $dt = new Carbon();
+            $time=$dt->second(0)->toTimeString();
+            $test=DB::table('test')->where('time',$time)->where('status',1)->first();
+
+            if($test){
+                return true;
+            }else{
+                return false;
+            }
+        });
     }
 
     /**

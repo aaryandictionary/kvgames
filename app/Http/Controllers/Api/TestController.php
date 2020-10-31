@@ -1,64 +1,90 @@
 <?php
 
-namespace App\Console\Commands;
+namespace App\Http\Controllers\Api;
 
-use App\Http\Controllers\Api\UserController;
-use DateTime;
-use App\Helpers\ApiHelper;
-
+use App\Http\Controllers\Controller;
 use App\Models\Tests;
-use Carbon\Carbon;
-use Illuminate\Console\Command;
-use Illuminate\Support\Facades\DB;
+use Illuminate\Http\Request;
+use App\Helpers\ApiHelper;
 use App\Models\MyTickets;
 use App\User;
+use Carbon\Carbon;
+use Illuminate\Support\Facades\DB;
 
-class notifier extends Command
+class TestController extends Controller
 {
-    /**
-     * The name and signature of the console command.
-     *
-     * @var string
-     */
-    protected $signature = 'minute:update';
+    public function addTest(Request $request){
+        $test=Tests::create($request->all());
 
-    /**
-     * The console command description.
-     *
-     * @var string
-     */
-    protected $description = 'Command description';
-
-    /**
-     * Create a new command instance.
-     *
-     * @return void
-     */
-    public function __construct()
-    {
-        parent::__construct();
+        $response=ApiHelper::createAPIResponse(false,200,"Test added successfully",$test);
+        return response()->json($response,200);
     }
 
-    /**
-     * Execute the console command.
-     *
-     * @return int
-     */
-    public function handle()
-    {
-        $dt = new Carbon();
-        $time=$dt->second(0)->toTimeString();
-        $test=Tests::where('time',$dt)->where('status',1)->first();
+    public function changeStatus($id){
+        $test=Tests::where('id',$id)->first();
 
         if($test){
-            
-        $tokens=$this->getTicketUser($test->sendto);
+            if($test->status==0){
+                $test->status=1;
+            }else{
+                $test->status=0;
+            }
+            $test->save();
 
-        if($tokens){
-            $this->notification($tokens,$test->title,$test->message);
-        }
+        $response=ApiHelper::createAPIResponse(false,200,"Status changed successfully",$test);
+        return response()->json($response,200);
+        
+    }else{
+        $response=ApiHelper::createAPIResponse(false,101,"Cannot change statsu",null);
+        return response()->json($response,200);
         }
     }
+
+    public function updateTest(Request $request){
+        $test=Tests::where('id',$request->id)->first();
+
+        if($test){
+            $test->time=$request->time;
+            $test->sendto=$request->sendto;
+            $test->title=$request->title;
+            $test->message=$request->message;
+
+            $test->save();
+
+        $response=ApiHelper::createAPIResponse(false,200,"Test updated successfully",$test);
+        return response()->json($response,200);
+    }else{
+        $response=ApiHelper::createAPIResponse(false,101,"Cannot update Test",null);
+        return response()->json($response,200);
+        }
+    }
+
+    public function deleteTest($id){
+        $test=Tests::where('id',$id)->delete();
+
+        $response=ApiHelper::createAPIResponse(false,200,"Test deleted successfully",null);
+        return response()->json($response,200);
+    }
+
+    public function getAllTest(){
+        $tests=Tests::select('id','time','sendto','title','message','status')->orderBy('time')->get();
+
+        $response=ApiHelper::createAPIResponse(false,200,"",$tests);
+        return response()->json($response,200);
+    }
+
+
+    public function sendCustomNotification(Request $request){
+        $tokens=$this->getTicketUser($request->type);
+
+        if($tokens){
+            $this->notification($tokens,$request->title,$request->message);
+        }
+
+        $response=ApiHelper::createAPIResponse(false,200,"",null);
+        return response()->json($response,200);
+    }
+
 
 
 
@@ -116,6 +142,7 @@ class notifier extends Command
                         // ->where('change_for_time','<',$time)
                         ->pluck('change_for_time');
 
+
         $add=DB::table('ticket_category_changes')
                         ->select(DB::raw('change_for_time AS ticket_time'))
                         ->where('change_for_time','>',$timeNow)
@@ -149,6 +176,7 @@ class notifier extends Command
 
         return $dateTime;
     }
+
 
 
 

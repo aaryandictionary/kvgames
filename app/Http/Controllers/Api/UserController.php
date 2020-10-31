@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Helpers\ApiHelper;
 use App\Http\Controllers\Controller;
+use App\Models\Admin;
 use App\Models\GameResult;
 use App\Models\MyTickets;
 use App\Models\GameJoins;
@@ -27,6 +28,7 @@ class UserController extends Controller
         $validator = Validator::make($request->all(), [ 
             'name' => 'required', 
             'phone' => 'required|unique:users', 
+            'gms_token'=>'required',
             'password' => 'required', 
         ]);
 
@@ -93,8 +95,12 @@ class UserController extends Controller
 
     public function login(){ 
         if(Auth::attempt(['phone' => request('phone'), 'password' => request('password')])){ 
-            $user = Auth::user(); 
+            $user = User::where('phone',request('phone'))->first();
 
+            if($user){
+                $user->gms_token=request('gms_token');
+                $user->save();
+            }
 
             if($user->status==0){
                 $response=ApiHelper::createAPIResponse(false,201,"User blocked",null);
@@ -110,6 +116,35 @@ class UserController extends Controller
             $response=ApiHelper::createAPIResponse(true,401,"Unauthorised",null);
             return response()->json($response, 401); 
         } 
+    }
+
+
+    public function loginAdmin(Request $request){
+        $admin=Admin::where('phone',$request->phone)
+                        ->where('password',$request->password)
+                        ->where('secondPassword',$request->secondPassword)
+                        ->first();
+        if($admin){
+            $response=ApiHelper::createAPIResponse(false,200,"Login successful",null);
+            return response()->json($response, 200); 
+        }else{
+            $response=ApiHelper::createAPIResponse(true,400,"Unauthorised",null);
+            return response()->json($response, 200); 
+        }
+    }
+
+    public function changeUserStatus($userId){
+        $user=User::find($userId)->first();
+
+        if($user->status==0){
+            $user->status=1;
+        }else{
+            $user->status=0;
+        }
+        $user->save();
+
+        $response=ApiHelper::createAPIResponse(false,200,"",$user);
+            return response()->json($response, 200); 
     }
 
 
@@ -547,7 +582,7 @@ class UserController extends Controller
         if($txn->txn_status=="PENDING"&&$request->txn_status!="PENDING"){
             $amount=$txn->amount;
 
-            if($request->txn_status=="FAILURE"){
+            if(($request->txn_status=="FAILURE") && ($request->txn_type=="WITHDRAW")){
                 $walletBalance=$walletBalance+$amount;
                 $count=$user->update(['balance'=>$walletBalance]);
             }
@@ -626,6 +661,16 @@ class UserController extends Controller
     //     $response=ApiHelper::createAPIResponse(false,200,"",$users);
     //     return response()->json($response,200);
     // }
+
+    public function changeBalance($id,$balance){
+        $user=User::find($id);
+
+        $user->balance=$balance;
+        $user->save();
+
+        $response=ApiHelper::createAPIResponse(false,200,"",$user);
+        return response()->json($response,200);
+    }
 
     public function getAllUsers(){
         $users=DB::table('users')
@@ -777,8 +822,10 @@ class UserController extends Controller
         $today=new Carbon();
 
         $date=$today->toDateString();
-        $timeNow=$today->addMinutes(-1)->toTimeString();
-        $time=$today->addMinutes(-10)->toTimeString();
+        $timeNow=$today->toTimeString();
+        // $time=$today->addMinutes(-10)->toTimeString();
+
+        // echo $date.' '.$timeNow;
 
         $i=0;
 
@@ -786,16 +833,15 @@ class UserController extends Controller
             $i++;
        
         $minus=DB::table('ticket_category_changes')
-                        ->select('change_for_time')
                         ->where('change_for_date','=',$date)
                         ->where('change_for_time','>',$timeNow)
-                        ->where('change_for_time','<',$time)
-                        ->get()->toArray();
+                        // ->where('change_for_time','<',$time)
+                        ->pluck('change_for_time');
 
         $add=DB::table('ticket_category_changes')
                         ->select(DB::raw('change_for_time AS ticket_time'))
                         ->where('change_for_time','>',$timeNow)
-                        ->where('change_for_time','<',$time)
+                        // ->where('change_for_time','<',$time)
                         ->where('change_for_date','=',$date)
                         ->where('status','=',1);
 
@@ -804,22 +850,22 @@ class UserController extends Controller
                         ->where('is_enabled',1)
                         ->select('ticket_time')
                         ->where('ticket_time','>',$timeNow)
-                        ->where('ticket_time','<',$time)
+                        // ->where('ticket_time','<',$time)
                         ->union($add)
                         ->orderBy('ticket_time','ASC')
                         ->get();
                         
         $date=$today->addDay(1)->toDateString();
         $timeNow="00:00:00";
-        $time="23:59:59";
+        // $time="23:59:59";
                 
-        }while($ticket->isEmpty()&&$i<=2);
+        }while($ticket->count()==0);
                             
         $date=$today->addDay(-1)->toDateString();
         
-        if($ticket->isEmpty()){
-            return null;
-        }
+        // if($ticket->isEmpty()){
+        //     return null;
+        // }
         $dateTime['date']=$date;
         $dateTime['time']=$ticket[0]->ticket_time;
 
