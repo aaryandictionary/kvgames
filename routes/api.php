@@ -50,7 +50,7 @@ Route::get('deleteprize/{prizeId}','Api\PrizeController@deletePrize');
 
 Route::get('getallusers','Api\UserController@getAllUsers');
 Route::get('getnextgametime/{type}','Api\UserController@getNextGameTime');
-Route::get('getticketfornextgame/{userId}/{time}','Api\UserController@getTicketForNextGame');
+Route::get('getticketfornextgame/{userId}/{time}/{date}','Api\UserController@getTicketForNextGame');
 Route::get('getuserbalance/{userId}','Api\UserController@getUserBalance');
 Route::get('getleaderboard/{type}','Api\UserController@getLeaderboard');
 
@@ -61,8 +61,9 @@ Route::get('getgametiming/{date}','Api\TicketController@getGameTimings');
 Route::get('gettimes/{date}','Api\TicketController@getTimesForDate');
 
 Route::get('getgameadmin/{date}/{time}','Api\TicketController@getGameAdmin');
-Route::get('getticketsdt/{date}/{time}','Api\TicketController@getTicketsDT');
+Route::get('getticketsdt/{date}/{time}/{price}','Api\TicketController@getTicketsDT');
 
+Route::get('getPricesForTime/{date}/{time}','Api\TicketController@getPricesForTime');
 
 Route::post('updategame','Api\TicketController@updateGameAdmin');
 Route::post('addgame','Api\TicketController@addMainGame');
@@ -73,7 +74,6 @@ Route::get('deleteGameMainandChange/{time}','Api\TicketController@deleteGameMain
 Route::get('getMasterGameTimings','Api\TicketController@getMasterGameTimings');
 Route::get('getMasterGameDetails/{time}','Api\TicketController@getMasterGameDetails');
 Route::post('updateMasterGameDetails','Api\TicketController@updateMasterGameDetails');
-
 
 Route::get('gettransactions/{status}','Api\TicketController@getTransactions');
 Route::get('gettotals','Api\TicketController@getTotals');

@@ -737,22 +737,34 @@ class UserController extends Controller
 
         $today=new Carbon();
 
+        $nextGameTime=$this->findNextGame();
+
+        if(!$nextGameTime){
+            $response=ApiHelper::createAPIResponse(false,-1,"Cannot join game",null);
+            return response()->json($response,200);
+        }
+
         // $date=$today->toDateString();
-        $date=$request->game_date;
+        // $date=$request->game_date;
+        $date=$nextGameTime['date'];
         $timeNow=$today->toTimeString();
-        $time=$today->addMinutes(1)->toTimeString();
+        // $time=$today->addMinutes(1)->toTimeString();
 
 
         // $ticketTime=$this->findNextGame();
-        $ticketTime=$request->game_time;
+        // $ticketTime=$request->game_time;
+        $ticketTime=$nextGameTime['time'];
+
+        $gameJoinData=$request->all();
+
+        $gameJoinData['game_date']=$date;
+        $gameJoinData['game_time']=$ticketTime;
 
         $myTickets=DB::table('my_tickets')
                         ->where('user_id','=',$request->user_id)
                         ->where('my_ticket_date','=',$date)
                         ->where('my_ticket_time','=',$ticketTime)
                         ->first();
-
-
 
         if($myTickets){
 
@@ -765,9 +777,9 @@ class UserController extends Controller
         $joinedGame=null;
         // if($timeNow>=$ticketTime&&$timeNow<=$time){
             $joinedGame=DB::table('game_joins')
-                            ->where('user_id','=',$request['user_id'])
+                            ->where('user_id','=',$gameJoinData['user_id'])
                             ->where('game_date','=',$date)
-                            ->where('game_time','=',$request['game_time'])
+                            ->where('game_time','=',$gameJoinData['game_time'])
                             ->first();
                             
             if($joinedGame){
@@ -778,7 +790,7 @@ class UserController extends Controller
             if($joinedGame==null){
                 $request['join_time']=$timeNow;
 
-                $joinedGame=GameJoins::create($request->all());
+                $joinedGame=GameJoins::create($gameJoinData);
             }
 
         // }
@@ -793,84 +805,91 @@ class UserController extends Controller
     }
     }
 
-    public function getTicketForNextGame($userId,$time){
-        $nextGameTIme=$time;
+    public function getTicketForNextGame($userId,$time,$date){
+        $nextGameTime=$this->findNextGame();
 
-        $today=new Carbon();
-
-        $date=$today->toDateString();
-
-
-        $myTickets=DB::table('my_tickets')
+        if($nextGameTime){
+            $myTickets=DB::table('my_tickets')
                     ->leftjoin('prizes','my_tickets.ticket_unit_price','=','prizes.prize_unit_price')
                     ->where('prizes.is_active','=',1)
-                    ->where('my_tickets.my_ticket_date','=',$date)
+                    ->where('my_tickets.my_ticket_date','=',$nextGameTime['date'])
                     ->where('my_tickets.user_id','=',$userId)
-                    ->where('my_tickets.my_ticket_time','=',$nextGameTIme)
+                    ->where('my_tickets.my_ticket_time','=',$nextGameTime['time'])
                     ->orderBy('ticket_unit_price','ASC')
                     ->select('my_tickets.my_ticket_id','my_tickets.user_id','my_tickets.my_ticket_date','my_tickets.my_ticket_time','my_tickets.ticket_combo','my_tickets.ticket_unit_price','prizes.prize_count',
                     'prizes.ef_rate','prizes.li_rate','prizes.fh_rate')
                     ->get();
-
+        }else{
+            $myTickets=null;
+        }
 
         $response=ApiHelper::createAPIResponse(false,200,"",$myTickets);
         return response()->json($response,200);
     }
 
 //Function just to find the next game time --NO ROUTE AVALIABLE
-    public function findNextGame(){
-        $today=new Carbon();
+public function findNextGame(){
+    $today=new Carbon();
 
-        $date=$today->toDateString();
-        $timeNow=$today->toTimeString();
-        // $time=$today->addMinutes(-10)->toTimeString();
+    $date=$today->toDateString();
+    $timeFrom=$today->addMinutes(-10)->toTimeString();
+    $timeTo=$today->addMinutes(10)->toTimeString();
 
-        // echo $date.' '.$timeNow;
+    // echo $date.' '.$timeNow;
 
-        $i=0;
+    $i=0;
 
-        do{
-            $i++;
-       
-        $minus=DB::table('ticket_category_changes')
-                        ->where('change_for_date','=',$date)
-                        ->where('change_for_time','>',$timeNow)
-                        // ->where('change_for_time','<',$time)
-                        ->pluck('change_for_time');
+    $ticket=null;
 
-        $add=DB::table('ticket_category_changes')
-                        ->select(DB::raw('change_for_time AS ticket_time'))
-                        ->where('change_for_time','>',$timeNow)
-                        // ->where('change_for_time','<',$time)
-                        ->where('change_for_date','=',$date)
-                        ->where('status','=',1);
+    do{
+        $i++;
+   
+    $minus=DB::table('ticket_category_changes')
+                    ->where('change_for_date','=',$date)
+                    ->where('change_for_time','>',$timeFrom)
+                    ->where('change_for_time','<',$timeTo)
+                    ->pluck('change_for_time');
 
-        $ticket=DB::table('ticket_category')
-                        ->whereNotIn('ticket_time',$minus)
-                        ->where('is_enabled',1)
-                        ->select('ticket_time')
-                        ->where('ticket_time','>',$timeNow)
-                        // ->where('ticket_time','<',$time)
-                        ->union($add)
-                        ->orderBy('ticket_time','ASC')
-                        ->get();
-                        
-        $date=$today->addDay(1)->toDateString();
-        $timeNow="00:00:00";
-        // $time="23:59:59";
-                
-        }while($ticket->count()==0);
-                            
-        $date=$today->addDay(-1)->toDateString();
-        
-        // if($ticket->isEmpty()){
-        //     return null;
-        // }
-        $dateTime['date']=$date;
-        $dateTime['time']=$ticket[0]->ticket_time;
+    $add=DB::table('ticket_category_changes')
+                    ->select(DB::raw('change_for_time AS ticket_time'))
+                    ->where('change_for_time','>',$timeFrom)
+                    ->where('change_for_time','<',$timeTo)
+                    ->where('change_for_date','=',$date)
+                    ->where('status','=',1);
 
-        return $dateTime;
+    $ticket=DB::table('ticket_category')
+                    ->whereNotIn('ticket_time',$minus)
+                    ->where('is_enabled',1)
+                    ->select('ticket_time')
+                    ->where('ticket_time','>',$timeFrom)
+                    ->where('ticket_time','<',$timeTo)
+                    ->union($add)
+                    ->orderBy('ticket_time','ASC')
+                    ->get();
+                    
+    $date=$today->addDay(1)->toDateString();
+    // $timeFrom="00:00:00";
+    // $timeTo="23:59:59";
+    if($i==1&&$ticket->count()==0){
+        return null;
     }
+            
+    }while($ticket->count()==0);
+                        
+    $date=$today->addDay(-1)->toDateString();
+    
+    // if($ticket->isEmpty()){
+    //     return null;
+    // }
+    if($ticket){
+        $dateTime['date']=$date;
+        $dateTime['time']=$ticket[0]->ticket_time;    
+    }else{
+        $dateTime=null;
+    }
+    
+    return $dateTime;
+}
 
 
     public function saveResponse(Request $request){
@@ -913,17 +932,11 @@ class UserController extends Controller
         if($type==-1){
             $lastJoins=$this->getLastJoinId();
 
-            $lastJoinIds=[];
-            $i=0;
-            foreach($lastJoins as $lj){
-                $lastJoinIds[$i]=$lj->join_id;
-                $i++;
-            }
 
             $lastLeaderBoard=DB::table('game_responses')
                                 ->rightJoin('users','game_responses.user_id','=','users.id')
-                                ->whereIn('game_responses.join_id',$lastJoinIds)
-                                ->select(DB::raw("sum(game_responses.win_amount) AS total"))
+                                ->whereIn('game_responses.join_id',$lastJoins)
+                                ->select(DB::raw("sum(IF(game_responses.win_amount,game_responses.win_amount,0)) AS total"))
                                 ->groupBy('users.id','users.name','users.image_url')
                                 ->addSelect('users.name','users.image_url')
                                 ->orderBy('total','DESC')
@@ -984,8 +997,7 @@ class UserController extends Controller
         $lastJoins=DB::table('game_joins')
                         ->where('game_date','=',$lastTime->game_date)
                         ->where('game_time',$lastTime->game_time)
-                        ->select('join_id')
-                        ->get()->toArray();
+                        ->pluck('join_id');
 
         return $lastJoins;
     }

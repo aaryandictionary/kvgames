@@ -47,7 +47,22 @@ class TicketController extends Controller
             ->distinct()
             ->pluck('my_ticket_time');
 
-        $response = ApiHelper::createAPIResponse(false, 200, "Ticket changed successfully", $times);
+        $response = ApiHelper::createAPIResponse(false, 200, "", $times);
+        return response()->json($response, 200);
+    }
+
+    public function getPricesForTime($date,$time){
+        if($time=="ALL"){
+            $prices=MyTickets::where('my_ticket_date','=',$date)
+                                ->distinct()
+                                ->pluck('ticket_unit_price');
+        }else{
+            $prices=MyTickets::where('my_ticket_date','=',$date)
+                                ->where('my_ticket_time','=',$time)
+                                ->distinct()
+                                ->pluck('ticket_unit_price');
+        }
+        $response = ApiHelper::createAPIResponse(false, 200, "", $prices);
         return response()->json($response, 200);
     }
 
@@ -126,21 +141,42 @@ class TicketController extends Controller
     }
 
 
-    public function getTicketsDT($date, $time)
+    public function getTicketsDT($date, $time,$price)
     {
         if ($time == "ALL") {
-            $tickets = DB::table('my_tickets')->where('my_tickets.my_ticket_date', '=', $date)
+            if($price=="ALL"){
+                $tickets = DB::table('my_tickets')->where('my_tickets.my_ticket_date', '=', $date)
                 ->join('users', 'users.id', '=', 'my_tickets.user_id')
                 ->orderBy('my_tickets.ticket_unit_price', 'DESC')
                 ->select('users.name', 'users.phone', 'users.id', 'my_tickets.my_ticket_date', 'my_tickets.my_ticket_time', 'my_tickets.ticket_unit_price')
                 ->get();
+            }else{
+                $tickets = DB::table('my_tickets')->where('my_tickets.my_ticket_date', '=', $date)
+                ->where('my_tickets.ticket_unit_price','=',$price)
+                ->join('users', 'users.id', '=', 'my_tickets.user_id')
+                ->orderBy('my_tickets.ticket_unit_price', 'DESC')
+                ->select('users.name', 'users.phone', 'users.id', 'my_tickets.my_ticket_date', 'my_tickets.my_ticket_time', 'my_tickets.ticket_unit_price')
+                ->get();
+            }
+            
         } else {
-            $tickets = DB::table('my_tickets')->where('my_tickets.my_ticket_date', '=', $date)
+            if($price=="ALL"){
+                $tickets = DB::table('my_tickets')->where('my_tickets.my_ticket_date', '=', $date)
                 ->where('my_tickets.my_ticket_time', '=', $time)
                 ->join('users', 'users.id', '=', 'my_tickets.user_id')
                 ->orderBy('my_tickets.ticket_unit_price', 'DESC')
                 ->select('users.name', 'users.phone', 'users.id', 'my_tickets.my_ticket_date', 'my_tickets.my_ticket_time', 'my_tickets.ticket_unit_price')
                 ->get();
+            }else{
+                $tickets = DB::table('my_tickets')->where('my_tickets.my_ticket_date', '=', $date)
+                ->where('my_tickets.my_ticket_time', '=', $time)
+                ->where('my_tickets.ticket_unit_price','=',$price)
+                ->join('users', 'users.id', '=', 'my_tickets.user_id')
+                ->orderBy('my_tickets.ticket_unit_price', 'DESC')
+                ->select('users.name', 'users.phone', 'users.id', 'my_tickets.my_ticket_date', 'my_tickets.my_ticket_time', 'my_tickets.ticket_unit_price')
+                ->get();
+            }
+            
         }
 
 
